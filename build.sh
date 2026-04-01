@@ -104,7 +104,7 @@ function help () {
 
 function log_info () {
     local str="[\033[32m$0\033[0m] [I] $(date): $1"
-    echo -e "$str"
+    echo -e $str
     echo -e "[I] $(date): $1" >> $LOGDIR/$(date +%Y%m%d).log
 }
 
@@ -131,6 +131,12 @@ function check_host() {
 
 function main()
 {
+    local time_start=""
+    local time_end=""
+    local time_hour=""
+    local time_min=""
+    local time_sec=""
+    local time_total=""
     local rootfs_flag=false
     local target_flag=false
 
@@ -183,8 +189,18 @@ function main()
     log_info "Mirror for debootstrap: $DEBMIRROR"
 
     if [ $rootfs_flag == true ] && [ $target_flag == true ]; then
+        local time_tmp=""
+        local time_msg=""
+        time_start=$(date +%s)
         mkdir -pv $OUTDIR/$TARGET
         rootfs
+        time_end=$(date +%s)
+        time_total=$(echo "$time_end - $time_start" | bc)
+        time_hour=$(echo "$time_total / 3600" | bc)
+        time_min=$(echo "($time_total - (3600 * $time_hour)) / 60" | bc)
+        time_sec=$(echo "($time_total - (3600 * $time_hour) - (60 * $time_min))" | bc)
+        printf -v time_msg "%02d:%02d:%02d" $time_hour $time_min $time_sec
+        log_info "Total time ${time_msg}"
     else
         help
         exit 1
