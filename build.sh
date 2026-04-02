@@ -41,6 +41,7 @@ function rootfs () {
         --include=ubuntu-minimal \
         $TARGET $ROOTFSDIR $DEBMIRROR; then
             log_err "debootstrap failed!"
+            return 1
     fi
 
     log_info "Copy script to rootfs"
@@ -77,13 +78,15 @@ function rootfs () {
         --exclude="sys/*" \
         --exclude="tmp/*" \
         -cf $OUTDIR/$TARGET/disk.tar -C $ROOTFSDIR .; then
-            exit 1
+            return 1
     fi
 
     log_info "Extract rootfs to $PWD/$OUTDIR/$TARGET/mnt"
-    tar --numeric-owner \
+    if ! tar --numeric-owner \
         --preserve-permissions \
-        -xf $OUTDIR/$TARGET/disk.tar -C $OUTDIR/$TARGET/mnt
+        -xf $OUTDIR/$TARGET/disk.tar -C $OUTDIR/$TARGET/mnt; then
+            return 1
+    fi
     umount -v -t ext4 $OUTDIR/$TARGET/mnt
 
     log_info "Resize rootfs image"
@@ -100,6 +103,8 @@ function help () {
     echo -e "\t-d|-D [arguments...] TARGET [focal|jammy|noble]"
     echo -e "\t-r|-R Build RootFS"
     echo -e "\t-c|-C Clean"
+    echo -e "\n"
+    echo -e "Example: $0 -r -d focal"
 }
 
 function log_info () {
@@ -116,7 +121,7 @@ function log_err () {
 
 function clean() {
     log_info "Clean $OUTDIR"
-    rm -rvf $OUTDIR $LOGDIR
+    rm -rf $OUTDIR $LOGDIR
 }
 
 function check_host() {
@@ -125,8 +130,9 @@ function check_host() {
         && [ "$HOST_VERID" != "24.04" ] \
         && [ "$HOST_NAME" != "Ubuntu" ]; then
             log_err "Only supports building on Ubuntu 20.04/22.04/24.04!"
-            exit 1
+            return 1
     fi
+    return 0
 }
 
 function main()
@@ -148,7 +154,7 @@ function main()
             case "$opt" in
                 h|H)
                     help
-                    exit 0
+                    return 0
                     ;;
                 r|R)
                     rootfs_flag=true
@@ -156,39 +162,48 @@ function main()
                 d|D)
                     TARGET="$OPTARG"
                     ROOTFSDIR="$OUTDIR/$TARGET/rootfs"
-                    target_flag=true
+                    if [ "$TARGET" == "focal" ] \
+                        || [ "$TARGET" == "jammy" ] \
+                        || [ "$TARGET" == "noble" ]; then
+                                            target_flag=true
+                                        else
+                                            help
+                                            return 1
+                    fi
                     ;;
                 c|C)
                     clean
-                    exit 0
+                    return 0
                     ;;
                 *)
                     help
-                    exit 1
+                    return 1
                     ;;
             esac
         done
     else
         help
-        exit 1
+        return 1
     fi
 
-    log_info "Start building"
-    log_info "Check host environment"
-    check_host
-    log_info "Host environment check passed"
-
-    log_info "Install host depends"
-    apt install -y $HOST_DEPENDS
-
-    log_info "Host: $HOST_NAME $HOST_VERID"
-    log_info "Arguments: $*"
-    log_info "Output directory: $OUTDIR"
-    log_info "RootFS directory: $ROOTFSDIR"
-    log_info "Script directory: $SCRIPTDIR"
-    log_info "Mirror for debootstrap: $DEBMIRROR"
-
     if [ $rootfs_flag == true ] && [ $target_flag == true ]; then
+        log_info "Start building"
+        log_info "Check host environment"
+        if ! check_host; then
+            return 1
+        fi
+        log_info "Host environment check passed"
+
+        log_info "Install host depends"
+        apt install -y $HOST_DEPENDS
+
+        log_info "Host: $HOST_NAME $HOST_VERID"
+        log_info "Arguments: $*"
+        log_info "Output directory: $OUTDIR"
+        log_info "RootFS directory: $ROOTFSDIR"
+        log_info "Script directory: $SCRIPTDIR"
+        log_info "Mirror for debootstrap: $DEBMIRROR"
+
         local time_tmp=""
         local time_msg=""
         time_start=$(date +%s)
@@ -203,10 +218,12 @@ function main()
         log_info "Total time ${time_msg}"
     else
         help
-        exit 1
+        return 1
     fi
-    exit 0
+    return 0
 }
+
+######## Begin ########
 if [ "$(id -u)" -eq 0 ]; then
     echo "Running as root"
     CURRENTDIR=$(pwd)
@@ -220,4 +237,4 @@ else
     echo "Not running as root"
     exit 1
 fi
-
+########  End  ########
